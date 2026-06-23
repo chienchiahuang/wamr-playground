@@ -1,0 +1,37 @@
+cmake_minimum_required(VERSION 3.14)
+
+find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
+project(wamr_hello)
+
+enable_language(ASM)
+
+set(WAMR_BUILD_PLATFORM "zephyr")
+
+if(NOT DEFINED WAMR_BUILD_TARGET)
+  set(WAMR_BUILD_TARGET "THUMBV7")
+endif()
+
+set(WAMR_BUILD_INTERP 1)
+set(WAMR_BUILD_FAST_INTERP 1)
+set(WAMR_BUILD_AOT 0)
+set(WAMR_BUILD_JIT 0)
+set(WAMR_BUILD_LIBC_BUILTIN 1)
+set(WAMR_BUILD_LIBC_WASI 0)
+set(WAMR_BUILD_MINI_LOADER 1)
+set(WAMR_BUILD_MULTI_MODULE 0)
+set(WAMR_BUILD_REF_TYPES 0)
+set(WAMR_BUILD_SIMD 0)
+
+set(WAMR_BUILD_GLOBAL_HEAP_POOL 1)
+set(WAMR_BUILD_GLOBAL_HEAP_SIZE 79872)  # 78KB — 64KB linear mem + exec_env + internals
+
+set(WAMR_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../modules/wasm-micro-runtime)
+
+include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
+
+target_sources(app PRIVATE
+    ${WAMR_RUNTIME_LIB_SOURCE}
+    src/main.c
+)
+
+target_compile_options(app PRIVATE -Wno-type-limits)

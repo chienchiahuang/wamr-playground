@@ -1,29 +1,43 @@
-# WAMR Hello World — macOS, Linux, STM32L476RG
+# WAMR Playground
 
-Run WebAssembly "Hello World" on three platforms using
+Run WebAssembly on multiple platforms using
 [wasm-micro-runtime](https://github.com/bytecodealliance/wasm-micro-runtime) (WAMR).
+
+## Supported Targets
+
+| Target | Directory | OS | Status |
+|--------|-----------|-----|--------|
+| macOS / Linux | `host-maclinux/` | POSIX | working |
+| STM32L476RG bare-metal | `host-stm32/` | None | working |
+| STM32L476RG Zephyr | `host-zephyr/` | Zephyr 3.7.0 | working |
 
 ## Prerequisites
 
-| Tool | macOS/Linux | STM32 |
-|------|-------------|-------|
-| CMake >= 3.14 | required | required |
-| WASI SDK | required (compile `.wasm`) | required (compile `.wasm`) |
-| Clang/GCC | host compiler | — |
-| arm-none-eabi-gcc | — | required |
-| ST-Link / OpenOCD | — | for flashing |
-
-Install WASI SDK: https://github.com/aspect-build/rules_go/wiki/WASI-SDK
+| Tool | macOS/Linux | STM32 bare-metal | STM32 Zephyr |
+|------|-------------|------------------|--------------|
+| CMake >= 3.14 | required | required | — |
+| WASI SDK | required | required | — |
+| Clang/GCC | required | — | — |
+| arm-none-eabi-gcc | — | required | — |
+| Docker | — | — | required |
+| OpenOCD | — | for flashing | for flashing |
 
 ## Project Structure
 
 ```
-wasm-micro-runtime/    # WAMR submodule
+wasm-micro-runtime/        # WAMR submodule
 wasm-apps/
-  hello.c              # Hello world source (WASI, ~54KB wasm)
-  hello_small.c        # Minimal hello world (libc-builtin, ~500B wasm)
-host-maclinux/         # Host runtime for macOS and Linux
-host-stm32/            # Bare-metal host for STM32L476RG Nucleo
+  hello.c                  # WASI hello world (~54KB wasm)
+  hello_small.c            # Minimal hello world (~526B wasm, libc-builtin)
+host-maclinux/             # Desktop host runtime
+host-stm32/                # Bare-metal Cortex-M4 (no OS)
+host-zephyr/               # Zephyr RTOS (Docker-based build)
+  Dockerfile               # Zephyr SDK + west workspace
+  build.sh                 # ./build.sh <board>
+  boards/
+    nucleo_l476rg.conf      # Per-board Kconfig
+  src/
+    main.c                  # Same for all boards
 ```
 
 ## Step 1: Compile the Wasm App
@@ -34,11 +48,12 @@ host-stm32/            # Bare-metal host for STM32L476RG Nucleo
 /opt/wasi-sdk/bin/clang -O2 -o wasm-apps/hello.wasm wasm-apps/hello.c
 ```
 
-### Minimal version (STM32 or any platform)
+### Minimal version (STM32 / Zephyr / any platform)
 
 ```bash
 /opt/wasi-sdk/bin/clang --target=wasm32 -nostdlib \
-    -Wl,--no-entry -Wl,--export=_start -Wl,--allow-undefined \
+    -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined \
+    -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096 \
     -O2 -fno-builtin \
     -o wasm-apps/hello_small.wasm wasm-apps/hello_small.c
 ```
@@ -50,11 +65,7 @@ mkdir -p host-maclinux/build && cd host-maclinux/build
 cmake .. -DCMAKE_BUILD_TYPE=Release
 cmake --build . -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
 
-# Run with the WASI wasm
 ./iwasm_hello ../../wasm-apps/hello.wasm
-
-# Or run with the minimal wasm
-./iwasm_hello ../../wasm-apps/hello_small.wasm
 ```
 
 Expected output:
@@ -63,7 +74,7 @@ Hello World from WebAssembly!
 Wasm app executed successfully.
 ```
 
-## Step 2b: Build & Flash on STM32L476RG
+## Step 2b: Build & Flash — STM32 Bare-Metal
 
 First, compile `hello_small.wasm` (Step 1 above), then:
 
@@ -73,34 +84,13 @@ cmake ..
 cmake --build . -j$(nproc)
 ```
 
-This produces `wamr_stm32.bin`, `wamr_stm32.hex`, and `wamr_stm32.elf`.
-
-### Flash with ST-Link
-
-```bash
-st-flash write wamr_stm32.bin 0x08000000
-```
-
-Or with OpenOCD:
-
+Flash with OpenOCD:
 ```bash
 openocd -f interface/stlink.cfg -f target/stm32l4x.cfg \
     -c "program wamr_stm32.elf verify reset exit"
 ```
 
-### View Output
-
-Connect a serial terminal to the Nucleo's ST-Link virtual COM port at **115200 baud**:
-
-```bash
-# macOS
-screen /dev/cu.usbmodem* 115200
-
-# Linux
-screen /dev/ttyACM0 115200
-```
-
-Expected output:
+Serial output at **115200 baud**:
 ```
 --- WAMR on STM32L476RG ---
 Hello World from WebAssembly!
@@ -108,18 +98,53 @@ Wasm executed OK!
 --- Done ---
 ```
 
-## Memory Footprint (STM32)
+## Step 2c: Build & Flash — Zephyr (Docker)
 
-| Section | Size | Notes |
-|---------|------|-------|
-| .text (flash) | ~99 KB | WAMR interpreter + libc-builtin |
-| .data (flash) | ~4 KB | Initialized data |
-| .bss (SRAM1) | ~4 KB | Variables (excl. WAMR pool) |
-| WAMR pool (SRAM2) | 24 KB | WAMR internal allocator |
-| Wasm linear mem (SRAM1) | 64+8 KB | Allocated at runtime via malloc |
-| Wasm binary (flash) | ~526 B | hello_small.wasm embedded |
-| **Total flash** | **~104 KB / 1024 KB** | |
-| **Total RAM** | **~100 KB / 128 KB** | |
+No local Zephyr SDK needed — everything runs inside Docker:
+
+```bash
+cd host-zephyr
+./build.sh nucleo_l476rg
+```
+
+First run builds the Docker image (~5 min). Output files land in `host-zephyr/output/`.
+
+Flash with OpenOCD:
+```bash
+openocd -f interface/stlink.cfg -f target/stm32l4x.cfg \
+    -c "program output/nucleo_l476rg.elf verify reset exit"
+```
+
+Serial output (Zephyr console):
+```
+*** Booting Zephyr OS build v3.7.0 ***
+--- WAMR on Zephyr ---
+Hello World from WebAssembly!
+elapsed: 21 ms
+```
+
+### Adding a New Board
+
+1. Create `host-zephyr/boards/<board_name>.conf` with board-specific Kconfig
+2. Add the board to the `case` in `build.sh`
+3. Run `./build.sh <board_name>`
+
+## Memory Footprint
+
+### STM32L476RG Bare-Metal
+
+| Resource | Used | Available |
+|----------|------|-----------|
+| Flash | ~104 KB | 1024 KB |
+| SRAM1 | ~76 KB | 96 KB |
+| SRAM2 | 24 KB (WAMR pool) | 32 KB |
+
+### STM32L476RG Zephyr
+
+| Resource | Used | Available |
+|----------|------|-----------|
+| Flash | 92 KB (8.8%) | 1024 KB |
+| RAM | 97.6 KB (99.3%) | 96 KB |
 
 ### Key WAMR Settings for Small Footprint
 
@@ -130,7 +155,7 @@ Wasm executed OK!
 - `WAMR_BUILD_LIBC_WASI=0` — disable WASI (not available on bare metal)
 - All optional features disabled (SIMD, ref types, threads, etc.)
 
-### STM32 Bare-Metal Gotchas
+## Bare-Metal Gotchas
 
 1. **Enable FPU before C code** — WAMR compiled with `-mfloat-abi=hard` emits VFP instructions. The Cortex-M4 FPU is off by default; enable CPACR in a `naked` Reset_Handler before calling any C function.
 2. **Copy wasm from flash to RAM** — `wasm_runtime_load` modifies the buffer in-place. Passing a flash pointer causes a HardFault.
