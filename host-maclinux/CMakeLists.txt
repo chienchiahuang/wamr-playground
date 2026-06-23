@@ -1,0 +1,46 @@
+cmake_minimum_required(VERSION 3.14)
+project(iwasm_hello)
+
+set(WAMR_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-micro-runtime)
+
+if(NOT DEFINED WAMR_BUILD_PLATFORM)
+  if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(WAMR_BUILD_PLATFORM "darwin")
+  else()
+    set(WAMR_BUILD_PLATFORM "linux")
+  endif()
+endif()
+
+if(NOT DEFINED WAMR_BUILD_TARGET)
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(arm64|aarch64)")
+    set(WAMR_BUILD_TARGET "AARCH64")
+  elseif(CMAKE_SIZEOF_VOID_P EQUAL 8)
+    set(WAMR_BUILD_TARGET "X86_64")
+  else()
+    set(WAMR_BUILD_TARGET "X86_32")
+  endif()
+endif()
+
+set(WAMR_BUILD_INTERP 1)
+set(WAMR_BUILD_FAST_INTERP 1)
+set(WAMR_BUILD_AOT 0)
+set(WAMR_BUILD_JIT 0)
+set(WAMR_BUILD_LIBC_BUILTIN 1)
+set(WAMR_BUILD_LIBC_WASI 1)
+set(WAMR_BUILD_MULTI_MODULE 0)
+set(WAMR_BUILD_MINI_LOADER 0)
+set(WAMR_BUILD_REF_TYPES 1)
+set(WAMR_BUILD_BULK_MEMORY 1)
+
+set(CMAKE_SHARED_LIBRARY_LINK_C_FLAGS "")
+set(CMAKE_SHARED_LIBRARY_LINK_CXX_FLAGS "")
+
+include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
+
+add_library(vmlib ${WAMR_RUNTIME_LIB_SOURCE})
+
+add_executable(iwasm_hello main.c)
+target_link_libraries(iwasm_hello vmlib -lm -lpthread)
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+  target_link_libraries(iwasm_hello -ldl)
+endif()
