@@ -10,6 +10,7 @@ manifest:
         name-allowlist:
           - cmsis
           - hal_stm32
+          - hal_nordic
 
   self:
     path: application

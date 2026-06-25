@@ -25,7 +25,11 @@ set(WAMR_BUILD_SIMD 0)
 set(WAMR_BUILD_GLOBAL_HEAP_POOL 1)
 set(WAMR_BUILD_GLOBAL_HEAP_SIZE 79872)  # 78KB — 64KB linear mem + exec_env + internals
 
-set(WAMR_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../modules/wasm-micro-runtime)
+if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-micro-runtime)
+  set(WAMR_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-micro-runtime)
+else()
+  set(WAMR_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../modules/wasm-micro-runtime)
+endif()
 
 include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 
