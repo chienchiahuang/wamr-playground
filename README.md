@@ -10,17 +10,28 @@ Run WebAssembly on multiple platforms using
 | macOS / Linux | `host-maclinux/` | POSIX | working |
 | STM32L476RG bare-metal | `host-stm32/` | None | working |
 | STM32L476RG Zephyr | `host-zephyr/` | Zephyr 3.7.0 | working |
+| nRF52840DK Zephyr | `host-zephyr/` | Zephyr 3.7.0 | working |
 
 ## Prerequisites
 
-| Tool | macOS/Linux | STM32 bare-metal | STM32 Zephyr |
-|------|-------------|------------------|--------------|
-| CMake >= 3.14 | required | required | — |
-| WASI SDK | required | required | — |
-| Clang/GCC | required | — | — |
-| arm-none-eabi-gcc | — | required | — |
-| Docker | — | — | required |
-| OpenOCD | — | for flashing | for flashing |
+| Tool | macOS/Linux | STM32 bare-metal | Zephyr (build) | Zephyr (flash) |
+|------|-------------|------------------|----------------|-----------------|
+| CMake >= 3.14 | required | required | — | — |
+| WASI SDK | required | required | — | — |
+| Clang/GCC | required | — | — | — |
+| arm-none-eabi-gcc | — | required | — | — |
+| Docker | — | — | required | — |
+| OpenOCD | — | for flashing | — | nucleo_l476rg |
+| JLinkExe | — | — | — | nrf52840dk |
+
+### Flash Tool Installation
+
+| Board | Tool | macOS | Linux |
+|-------|------|-------|-------|
+| nucleo_l476rg | OpenOCD | `brew install open-ocd` | `sudo apt install openocd` |
+| nrf52840dk | JLinkExe | `brew install --cask segger-jlink` | [Download from SEGGER](https://www.segger.com/downloads/jlink/) |
+
+> **macOS note:** After installing SEGGER J-Link, go to **System Settings → Privacy & Security → Full Disk Access** and enable your terminal app (Terminal or VS Code).
 
 ## Project Structure
 
@@ -33,11 +44,12 @@ host-maclinux/             # Desktop host runtime
 host-stm32/                # Bare-metal Cortex-M4 (no OS)
 host-zephyr/               # Zephyr RTOS (Docker-based build)
   Dockerfile               # Zephyr SDK + west workspace
-  build.sh                 # ./build.sh <board>
+  build.sh                 # Build & flash script
   boards/
-    nucleo_l476rg.conf      # Per-board Kconfig
+    nucleo_l476rg.conf     # STM32 Nucleo board overlay
+    nrf52840dk_nrf52840.conf # nRF52840DK board overlay
   src/
-    main.c                  # Same for all boards
+    main.c                 # Same for all boards
 ```
 
 ## Step 1: Compile the Wasm App
@@ -100,22 +112,44 @@ Wasm executed OK!
 
 ## Step 2c: Build & Flash — Zephyr (Docker)
 
-No local Zephyr SDK needed — everything runs inside Docker:
+No local Zephyr SDK needed — everything runs inside Docker.
+
+### Build
 
 ```bash
 cd host-zephyr
-./build.sh nucleo_l476rg
+./build.sh nucleo_l476rg          # STM32 Nucleo
+./build.sh nrf52840dk_nrf52840    # nRF52840DK
 ```
 
 First run builds the Docker image (~5 min). Output files land in `host-zephyr/output/`.
 
-Flash with OpenOCD:
+### Flash
+
 ```bash
-openocd -f interface/stlink.cfg -f target/stm32l4x.cfg \
-    -c "program output/nucleo_l476rg.elf verify reset exit"
+./build.sh flash nucleo_l476rg          # flash via OpenOCD + ST-Link
+./build.sh flash nrf52840dk_nrf52840    # flash via JLinkExe
 ```
 
-Serial output (Zephyr console):
+Or build + flash in one step:
+
+```bash
+./build.sh --flash nucleo_l476rg
+./build.sh --flash nrf52840dk_nrf52840
+```
+
+### Rebuild Docker Image
+
+If you change `west_lite.yml` or `Dockerfile`, force an image rebuild:
+
+```bash
+./build.sh --rebuild nrf52840dk_nrf52840
+```
+
+### Serial Output
+
+Connect at **115200 baud** to see:
+
 ```
 *** Booting Zephyr OS build v3.7.0 ***
 --- WAMR on Zephyr ---
@@ -126,8 +160,9 @@ elapsed: 21 ms
 ### Adding a New Board
 
 1. Create `host-zephyr/boards/<board_name>.conf` with board-specific Kconfig
-2. Add the board to the `case` in `build.sh`
-3. Run `./build.sh <board_name>`
+2. Add the board's HAL to `west_lite.yml` if needed
+3. Add the board to the `case` in `build.sh`
+4. Run `./build.sh --rebuild <board_name>` (first time, to pull the new HAL)
 
 ## Memory Footprint
 
@@ -145,6 +180,13 @@ elapsed: 21 ms
 |----------|------|-----------|
 | Flash | 92 KB (8.8%) | 1024 KB |
 | RAM | 97.6 KB (99.3%) | 96 KB |
+
+### nRF52840DK Zephyr
+
+| Resource | Used | Available |
+|----------|------|-----------|
+| Flash | 95 KB (9.1%) | 1024 KB |
+| RAM | 97.6 KB (37.2%) | 256 KB |
 
 ### Key WAMR Settings for Small Footprint
 
