@@ -44,3 +44,31 @@ target_link_libraries(iwasm_hello vmlib -lm -lpthread)
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Darwin")
   target_link_libraries(iwasm_hello -ldl)
 endif()
+
+set(WASI_SDK_DIR "$ENV{WASI_SDK}" CACHE PATH "WASI SDK path")
+if(NOT WASI_SDK_DIR)
+    set(WASI_SDK_DIR "/opt/wasi-sdk")
+endif()
+
+set(WASM_SRC_FULL ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-apps/hello.c)
+set(WASM_OUT_FULL ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-apps/hello.wasm)
+set(WASM_SRC_SMALL ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-apps/hello_small.c)
+set(WASM_OUT_SMALL ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-apps/hello_small.wasm)
+
+add_custom_command(OUTPUT ${WASM_OUT_FULL}
+    COMMAND ${WASI_SDK_DIR}/bin/clang -O2 -o ${WASM_OUT_FULL} ${WASM_SRC_FULL}
+    DEPENDS ${WASM_SRC_FULL}
+    COMMENT "Compiling hello.c → hello.wasm (WASI)"
+)
+
+add_custom_command(OUTPUT ${WASM_OUT_SMALL}
+    COMMAND ${WASI_SDK_DIR}/bin/clang --target=wasm32 -nostdlib
+        -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined
+        -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096
+        -O2 -fno-builtin
+        -o ${WASM_OUT_SMALL} ${WASM_SRC_SMALL}
+    DEPENDS ${WASM_SRC_SMALL}
+    COMMENT "Compiling hello_small.c → hello_small.wasm (minimal)"
+)
+
+add_custom_target(wasm_apps ALL DEPENDS ${WASM_OUT_FULL} ${WASM_OUT_SMALL})

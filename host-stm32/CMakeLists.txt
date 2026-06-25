@@ -74,11 +74,28 @@ target_include_directories(wamr_stm32.elf PRIVATE
 
 target_link_libraries(wamr_stm32.elf vmlib -lm)
 
+set(WASI_SDK_DIR "$ENV{WASI_SDK}" CACHE PATH "WASI SDK path")
+if(NOT WASI_SDK_DIR)
+    set(WASI_SDK_DIR "/opt/wasi-sdk")
+endif()
+set(WASM_SRC ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-apps/hello_small.c)
+set(WASM_OUT ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-apps/hello_small.wasm)
+
+add_custom_command(OUTPUT ${WASM_OUT}
+    COMMAND ${WASI_SDK_DIR}/bin/clang --target=wasm32 -nostdlib
+        -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined
+        -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096
+        -O2 -fno-builtin
+        -o ${WASM_OUT} ${WASM_SRC}
+    DEPENDS ${WASM_SRC}
+    COMMENT "Compiling hello_small.c → hello_small.wasm"
+)
+
 add_custom_command(OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/hello_wasm.c
     COMMAND ${CMAKE_COMMAND} -P ${CMAKE_CURRENT_SOURCE_DIR}/embed_wasm.cmake
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-apps/hello_small.wasm
+    DEPENDS ${WASM_OUT}
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    COMMENT "Converting hello.wasm to C array"
+    COMMENT "Embedding hello_small.wasm as C array"
 )
 
 add_custom_command(TARGET wamr_stm32.elf POST_BUILD
