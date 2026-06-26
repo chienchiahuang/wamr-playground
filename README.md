@@ -94,15 +94,12 @@ Wasm app executed successfully.
 First, compile `hello_small.wasm` (Step 1 above), then:
 
 ```bash
-mkdir -p host-stm32/build && cd host-stm32/build
-cmake ..
-cmake --build . -j$(nproc)
+make stm32-nucleo
 ```
 
-Flash with OpenOCD:
+Flash:
 ```bash
-openocd -f interface/stlink.cfg -f target/stm32l4x.cfg \
-    -c "program wamr_stm32.elf verify reset exit"
+make flash-stm32-nucleo
 ```
 
 Serial output at **115200 baud**:
@@ -120,16 +117,12 @@ Includes OTA supervisor for hot-swapping wasm modules over UART.
 PLL configured for 80 MHz (vs 4 MHz default MSI).
 
 ```bash
-git submodule update --init FreeRTOS-Kernel
-mkdir -p host-freertos/build && cd host-freertos/build
-cmake ..
-cmake --build . -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+make freertos-nucleo
 ```
 
-Flash with OpenOCD:
+Flash:
 ```bash
-openocd -f interface/stlink.cfg -f target/stm32l4x.cfg \
-    -c "program wamr_freertos.elf verify reset exit"
+make flash-freertos-nucleo
 ```
 
 Serial output at **115200 baud**:
@@ -165,9 +158,8 @@ No local Zephyr SDK needed — everything runs inside Docker.
 ### Build
 
 ```bash
-cd host-zephyr
-./build.sh nucleo_l476rg          # STM32 Nucleo
-./build.sh nrf52840dk_nrf52840    # nRF52840DK
+make zephyr-nucleo         # STM32 Nucleo
+make zephyr-nrf52840       # nRF52840DK
 ```
 
 First run builds the Docker image (~5 min). Output files land in `host-zephyr/output/`.
@@ -175,15 +167,8 @@ First run builds the Docker image (~5 min). Output files land in `host-zephyr/ou
 ### Flash
 
 ```bash
-./build.sh flash nucleo_l476rg          # flash via OpenOCD + ST-Link
-./build.sh flash nrf52840dk_nrf52840    # flash via JLinkExe
-```
-
-Or build + flash in one step:
-
-```bash
-./build.sh --flash nucleo_l476rg
-./build.sh --flash nrf52840dk_nrf52840
+make flash-zephyr-nucleo       # flash via OpenOCD + ST-Link
+make flash-zephyr-nrf52840     # flash via JLinkExe
 ```
 
 ### Rebuild Docker Image
