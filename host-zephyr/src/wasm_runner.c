@@ -25,6 +25,7 @@ static struct k_thread runner_thread;
 static K_THREAD_STACK_DEFINE(runner_stack, RUNNER_THREAD_STACK);
 static struct k_sem runner_done;
 static volatile bool runner_active;
+static bool runner_thread_created;
 
 void
 wasm_runner_init(void)
@@ -33,6 +34,7 @@ wasm_runner_init(void)
     current_module = NULL;
     current_inst = NULL;
     runner_active = false;
+    runner_thread_created = false;
 }
 
 static void
@@ -116,10 +118,14 @@ wasm_runner_load_buffer(uint8_t *buf, uint32_t size)
 void
 wasm_runner_start(void)
 {
+    if (runner_thread_created) {
+        k_thread_join(&runner_thread, K_MSEC(1000));
+    }
     k_sem_reset(&runner_done);
     k_thread_create(&runner_thread, runner_stack, RUNNER_THREAD_STACK,
                     runner_entry, NULL, NULL, NULL, 5, 0, K_NO_WAIT);
     k_thread_name_set(&runner_thread, "wasm_runner");
+    runner_thread_created = true;
 }
 
 void
