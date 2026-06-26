@@ -4,9 +4,12 @@
 #include "uart_loader.h"
 
 #define SUPERVISOR_STACK_SIZE 1536
-#define WASM_BUF_SIZE 8192
 
-static uint8_t wasm_buf[WASM_BUF_SIZE];
+#ifndef WASM_OTA_BUF_SIZE
+#define WASM_OTA_BUF_SIZE 8192
+#endif
+
+static uint8_t wasm_buf[WASM_OTA_BUF_SIZE];
 
 static K_THREAD_STACK_DEFINE(supervisor_stack, SUPERVISOR_STACK_SIZE);
 static struct k_thread supervisor_thread;

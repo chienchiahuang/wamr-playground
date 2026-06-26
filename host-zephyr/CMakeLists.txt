@@ -23,7 +23,14 @@ set(WAMR_BUILD_REF_TYPES 0)
 set(WAMR_BUILD_SIMD 0)
 
 set(WAMR_BUILD_GLOBAL_HEAP_POOL 1)
-set(WAMR_BUILD_GLOBAL_HEAP_SIZE 79872)  # 78KB — 64KB linear mem + exec_env + internals
+
+if(BOARD STREQUAL "nucleo_l476rg")
+  set(WAMR_BUILD_GLOBAL_HEAP_SIZE 65536)
+  set(WASM_OTA_BUF_SIZE 4096)
+else()
+  set(WAMR_BUILD_GLOBAL_HEAP_SIZE 79872)
+  set(WASM_OTA_BUF_SIZE 8192)
+endif()
 
 if(EXISTS ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-micro-runtime)
   set(WAMR_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../wasm-micro-runtime)
@@ -41,4 +48,5 @@ target_sources(app PRIVATE
     src/uart_loader.c
 )
 
+target_compile_definitions(app PRIVATE WASM_OTA_BUF_SIZE=${WASM_OTA_BUF_SIZE})
 target_compile_options(app PRIVATE -Wno-type-limits)
