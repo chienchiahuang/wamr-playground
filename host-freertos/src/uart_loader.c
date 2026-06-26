@@ -123,8 +123,8 @@ process_byte(uint8_t b, uint8_t *buf, uint32_t buf_size, uint32_t *out_size)
             }
 
             if (expected_size == 0 || expected_size > buf_size) {
-                printf("[loader] size %u exceeds buffer %u\n",
-                       expected_size, buf_size);
+                printf("[loader] size %lu exceeds buffer %lu\n",
+                       (unsigned long)expected_size, (unsigned long)buf_size);
                 rx_state = RX_IDLE;
                 return LOADER_ERR_SIZE;
             }
@@ -154,8 +154,8 @@ process_byte(uint8_t b, uint8_t *buf, uint32_t buf_size, uint32_t *out_size)
             rx_state = RX_IDLE;
 
             if (received_crc != computed_crc) {
-                printf("[loader] CRC mismatch: got 0x%08x, expected 0x%08x\n",
-                       received_crc, computed_crc);
+                printf("[loader] CRC mismatch: got 0x%08lx, expected 0x%08lx\n",
+                       (unsigned long)received_crc, (unsigned long)computed_crc);
                 return LOADER_ERR_CRC;
             }
 
