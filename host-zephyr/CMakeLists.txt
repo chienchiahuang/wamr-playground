@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.14)
 
 find_package(Zephyr REQUIRED HINTS $ENV{ZEPHYR_BASE})
-project(wamr_hello)
+project(wamr_ota)
 
 enable_language(ASM)
 
@@ -36,6 +36,9 @@ include(${WAMR_ROOT_DIR}/build-scripts/runtime_lib.cmake)
 target_sources(app PRIVATE
     ${WAMR_RUNTIME_LIB_SOURCE}
     src/main.c
+    src/supervisor.c
+    src/wasm_runner.c
+    src/uart_loader.c
 )
 
 target_compile_options(app PRIVATE -Wno-type-limits)
