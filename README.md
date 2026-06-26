@@ -9,20 +9,21 @@ Run WebAssembly on multiple platforms using
 |--------|-----------|-----|--------|
 | macOS / Linux | `host-maclinux/` | POSIX | working |
 | STM32L476RG bare-metal | `host-stm32/` | None | working |
+| STM32L476RG FreeRTOS | `host-freertos/` | FreeRTOS | working |
 | STM32L476RG Zephyr | `host-zephyr/` | Zephyr 3.7.0 | working |
 | nRF52840DK Zephyr | `host-zephyr/` | Zephyr 3.7.0 | working |
 
 ## Prerequisites
 
-| Tool | macOS/Linux | STM32 bare-metal | Zephyr (build) | Zephyr (flash) |
-|------|-------------|------------------|----------------|-----------------|
-| CMake >= 3.14 | required | required | — | — |
-| WASI SDK | required | required | — | — |
-| Clang/GCC | required | — | — | — |
-| arm-none-eabi-gcc | — | required | — | — |
-| Docker | — | — | required | — |
-| OpenOCD | — | for flashing | — | nucleo_l476rg |
-| JLinkExe | — | — | — | nrf52840dk |
+| Tool | macOS/Linux | STM32 bare-metal | STM32 FreeRTOS | Zephyr (build) | Zephyr (flash) |
+|------|-------------|------------------|----------------|----------------|-----------------|
+| CMake >= 3.14 | required | required | required | — | — |
+| WASI SDK | required | required | required | — | — |
+| Clang/GCC | required | — | — | — | — |
+| arm-none-eabi-gcc | — | required | required | — | — |
+| Docker | — | — | — | required | — |
+| OpenOCD | — | for flashing | for flashing | — | nucleo_l476rg |
+| JLinkExe | — | — | — | — | nrf52840dk |
 
 ### Flash Tool Installation
 
@@ -40,8 +41,10 @@ wasm-micro-runtime/        # WAMR submodule
 wasm-apps/
   hello.c                  # WASI hello world (~54KB wasm)
   hello_small.c            # Minimal hello world (~526B wasm, libc-builtin)
+FreeRTOS-Kernel/           # FreeRTOS submodule
 host-maclinux/             # Desktop host runtime
 host-stm32/                # Bare-metal Cortex-M4 (no OS)
+host-freertos/             # FreeRTOS on STM32L476 (real threading)
 host-zephyr/               # Zephyr RTOS (Docker-based build)
   Dockerfile               # Zephyr SDK + west workspace
   build.sh                 # Build & flash script
@@ -110,7 +113,52 @@ Wasm executed OK!
 --- Done ---
 ```
 
-## Step 2c: Build & Flash — Zephyr (Docker)
+## Step 2c: Build & Flash — STM32 FreeRTOS
+
+Same hardware as bare-metal, but runs WAMR as a FreeRTOS task with real threading support.
+Includes OTA supervisor for hot-swapping wasm modules over UART.
+PLL configured for 80 MHz (vs 4 MHz default MSI).
+
+```bash
+git submodule update --init FreeRTOS-Kernel
+mkdir -p host-freertos/build && cd host-freertos/build
+cmake ..
+cmake --build . -j$(nproc 2>/dev/null || sysctl -n hw.ncpu)
+```
+
+Flash with OpenOCD:
+```bash
+openocd -f interface/stlink.cfg -f target/stm32l4x.cfg \
+    -c "program wamr_freertos.elf verify reset exit"
+```
+
+Serial output at **115200 baud**:
+```
+--- WAMR OTA on FreeRTOS ---
+[loader] UART RX ready
+[supervisor] loading default wasm
+[supervisor] wasm running, waiting for OTA uploads...
+Hello World from WebAssembly!
+[runner] elapsed: 1 ms
+```
+
+OTA upload (same as Zephyr target):
+```bash
+python3 tools/wasm_send.py -p /dev/tty.usbmodem* wasm-apps/ota_test.wasm
+```
+
+> **STM32 note:** ST-Link V2 VCP needs firmware ≥ V2J46 for serial RX.
+> Update via **STM32CubeProgrammer → Firmware Update → Upgrade**.
+
+### Memory Layout
+
+| Region | Used | Available | Contents |
+|--------|------|-----------|----------|
+| Flash | 113 KB | 1024 KB | Code + wasm binary |
+| SRAM1 | ~91 KB | 96 KB | .data, .bss, FreeRTOS heap (16KB), newlib heap (64KB) |
+| SRAM2 | 24 KB | 32 KB | WAMR pool |
+
+## Step 2d: Build & Flash — Zephyr (Docker)
 
 No local Zephyr SDK needed — everything runs inside Docker.
 
