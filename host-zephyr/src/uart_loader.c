@@ -38,7 +38,7 @@ uart_isr_callback(const struct device *dev, void *user_data)
 
     while (uart_irq_update(dev) && uart_irq_is_pending(dev)) {
         if (uart_irq_rx_ready(dev)) {
-            uint8_t buf[32];
+            uint8_t buf[64];
             int len = uart_fifo_read(dev, buf, sizeof(buf));
             if (len > 0)
                 ring_buf_put(&rx_ring, buf, len);
@@ -63,6 +63,7 @@ uart_loader_init(void)
     rx_state = RX_IDLE;
     memset(magic_window, 0, sizeof(magic_window));
 
+    printk("[loader] UART RX ready\n");
     return 0;
 }
 

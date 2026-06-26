@@ -240,10 +240,13 @@ MAGIC(4B "WASM") + CMD(1B) + SIZE(4B LE) + '\n' + PAYLOAD(SIZE B) + CRC32(4B LE)
 
 ### Max Wasm Binary Size
 
-| Board | Max size | Reason |
-|-------|----------|--------|
-| nRF52840DK | 8 KB | 256KB RAM, comfortable headroom |
-| nucleo_l476rg | 4 KB | 128KB RAM, tighter budget |
+| Board | Max size | OTA status |
+|-------|----------|------------|
+| nRF52840DK | 8 KB | Working (ISR-based UART RX) |
+| nucleo_l476rg | 2 KB | Builds, OTA requires ST-Link V2 firmware ≥ V2J46 |
+
+> **STM32 note:** The ST-Link V2 VCP needs a firmware update for host→device serial RX.
+> Update via **STM32CubeProgrammer → Firmware Update → Upgrade**.
 
 ### Adding a New Board
 

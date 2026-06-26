@@ -5,8 +5,12 @@
 #include "wasm_runner.h"
 #include "wasm_hello.h"
 
+#ifndef WASM_STACK_SIZE
 #define WASM_STACK_SIZE 4096
+#endif
+#ifndef WASM_HEAP_SIZE
 #define WASM_HEAP_SIZE  4096
+#endif
 #define RUNNER_THREAD_STACK 4096
 #define RUNNER_STOP_TIMEOUT_MS 5000
 
