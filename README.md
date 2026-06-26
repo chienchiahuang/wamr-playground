@@ -152,10 +152,98 @@ Connect at **115200 baud** to see:
 
 ```
 *** Booting Zephyr OS build v3.7.0 ***
---- WAMR on Zephyr ---
+--- WAMR OTA Runtime ---
+[supervisor] loading default wasm
+[supervisor] wasm running, waiting for OTA uploads...
 Hello World from WebAssembly!
-elapsed: 21 ms
+[runner] elapsed: 1 ms
 ```
+
+## Wasm OTA (Over-The-Air Updates)
+
+The Zephyr firmware includes a **supervisor + wasm runner** architecture that allows hot-swapping wasm modules over UART without reflashing the MCU.
+
+### Architecture
+
+```
+Supervisor thread (always running)
+  ├── Boots default wasm from embedded header
+  ├── Listens on UART for incoming .wasm binaries
+  └── On upload: stop current → load new → restart
+        On failure: fall back to default wasm
+
+Wasm runner thread (managed by supervisor)
+  └── Executes the current wasm module
+```
+
+### OTA Upload
+
+**Prerequisites:** `pyserial` (`pip install pyserial`)
+
+1. Build & flash the firmware:
+   ```bash
+   cd host-zephyr
+   ./build.sh --flash nrf52840dk_nrf52840
+   ```
+
+2. Find your serial port:
+   ```bash
+   ls /dev/tty.usbmodem*     # macOS
+   ls /dev/ttyACM*            # Linux
+   ```
+
+3. Write a new wasm app:
+   ```c
+   // wasm-apps/my_app.c
+   extern int printf(const char *fmt, ...);
+   int main(void) {
+       printf("Hello from OTA!\n");
+       return 0;
+   }
+   ```
+
+4. Compile to wasm:
+   ```bash
+   /opt/wasi-sdk/bin/clang --target=wasm32 -nostdlib \
+       -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined \
+       -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096 \
+       -O2 -fno-builtin \
+       -o wasm-apps/my_app.wasm wasm-apps/my_app.c
+   ```
+
+5. Send over serial:
+   ```bash
+   python3 tools/wasm_send.py -p /dev/tty.usbmodem* wasm-apps/my_app.wasm
+   ```
+
+6. The device responds `OK` and the new wasm runs immediately — no reboot needed.
+
+### OTA Protocol
+
+Binary protocol over UART (shared with console, 115200 baud):
+
+```
+MAGIC(4B "WASM") + CMD(1B) + SIZE(4B LE) + '\n' + PAYLOAD(SIZE B) + CRC32(4B LE)
+```
+
+| CMD | Description |
+|-----|-------------|
+| `0x01` | Upload wasm binary |
+| `0x02` | Query status |
+
+| Response | Meaning |
+|----------|---------|
+| `OK` | Upload received, wasm swapped successfully |
+| `ERR:CRC` | CRC-32 mismatch, upload rejected |
+| `ERR:SIZE` | Payload too large for buffer (max 8KB) |
+| `ERR:LOAD` | wasm_runtime_load failed, fell back to default |
+
+### Max Wasm Binary Size
+
+| Board | Max size | Reason |
+|-------|----------|--------|
+| nRF52840DK | 8 KB | 256KB RAM, comfortable headroom |
+| nucleo_l476rg | 4 KB | 128KB RAM, tighter budget |
 
 ### Adding a New Board
 
@@ -181,12 +269,12 @@ elapsed: 21 ms
 | Flash | 92 KB (8.8%) | 1024 KB |
 | RAM | 97.6 KB (99.3%) | 96 KB |
 
-### nRF52840DK Zephyr
+### nRF52840DK Zephyr (with OTA supervisor)
 
 | Resource | Used | Available |
 |----------|------|-----------|
-| Flash | 95 KB (9.1%) | 1024 KB |
-| RAM | 97.6 KB (37.2%) | 256 KB |
+| Flash | 99 KB (9.4%) | 1024 KB |
+| RAM | 108 KB (41.2%) | 256 KB |
 
 ### Key WAMR Settings for Small Footprint
 
