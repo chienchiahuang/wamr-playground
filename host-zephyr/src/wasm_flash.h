@@ -4,8 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-#define WASM_SLOT_A  0
-#define WASM_SLOT_B  1
+#define WASM_NUM_SLOTS  3
+#define WASM_SLOT_SENSOR   0
+#define WASM_SLOT_ACTUATOR 1
+#define WASM_SLOT_ALERT    2
 
 int wasm_flash_init(void);
 

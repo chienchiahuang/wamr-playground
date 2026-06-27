@@ -6,7 +6,7 @@
 #include <zephyr/sys/crc.h>
 #include "uart_loader.h"
 
-#define UART_RING_BUF_SIZE 256
+#define UART_RING_BUF_SIZE 1024
 
 static const uint8_t MAGIC[4] = { 'W', 'A', 'S', 'M' };
 
@@ -23,13 +23,16 @@ static struct ring_buf rx_ring;
 
 static rx_state_t rx_state;
 static uint8_t magic_window[4];
-static uint8_t header_buf[6];
+static uint8_t header_buf[7];
 static uint32_t header_pos;
 static uint32_t payload_pos;
 static uint32_t expected_size;
 static uint8_t expected_cmd;
+static uint8_t expected_slot;
 static uint8_t crc_buf[4];
 static uint32_t crc_pos;
+
+static int *slot_out_ptr;
 
 static void
 uart_isr_callback(const struct device *dev, void *user_data)
@@ -91,12 +94,17 @@ process_byte(uint8_t b, uint8_t *buf, uint32_t buf_size, uint32_t *out_size)
 
     case RX_HEADER:
         header_buf[header_pos++] = b;
-        if (header_pos == 6) {
+        /* Header: CMD(1) + SLOT(1) + SIZE(4) + '\n'(1) = 7 bytes */
+        if (header_pos == 7) {
             expected_cmd = header_buf[0];
-            expected_size = header_buf[1]
-                          | (header_buf[2] << 8)
-                          | (header_buf[3] << 16)
-                          | (header_buf[4] << 24);
+            expected_slot = header_buf[1];
+            expected_size = header_buf[2]
+                          | (header_buf[3] << 8)
+                          | (header_buf[4] << 16)
+                          | (header_buf[5] << 24);
+
+            if (slot_out_ptr)
+                *slot_out_ptr = expected_slot;
 
             if (expected_cmd == CMD_STATUS) {
                 rx_state = RX_IDLE;
@@ -152,10 +160,13 @@ process_byte(uint8_t b, uint8_t *buf, uint32_t buf_size, uint32_t *out_size)
 
 int
 uart_loader_poll(uint8_t *buf, uint32_t buf_size,
-                 uint32_t *out_size, int32_t timeout_ms)
+                 uint32_t *out_size, int *out_slot,
+                 int32_t timeout_ms)
 {
     int64_t deadline = k_uptime_get() + timeout_ms;
     int result = LOADER_IDLE;
+
+    slot_out_ptr = out_slot;
 
     while (k_uptime_get() < deadline) {
         uint8_t b;

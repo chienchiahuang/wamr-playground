@@ -51,6 +51,7 @@ target_sources(app PRIVATE
     src/wasm_runner.c
     src/uart_loader.c
     src/wasm_flash.c
+    src/native_api.c
 )
 
 target_compile_definitions(app PRIVATE

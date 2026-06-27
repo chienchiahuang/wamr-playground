@@ -96,33 +96,30 @@ if $FLASH_ONLY; then
     exit 0
 fi
 
-# Compile wasm app and generate header
-WASM_SRC="$SCRIPT_DIR/../wasm-apps/hello_small.c"
-WASM_FILE="$SCRIPT_DIR/../wasm-apps/hello_small.wasm"
-WASM_HEADER="$SCRIPT_DIR/src/wasm_hello.h"
+# Compile wasm modules and generate embedded headers
 WASI_CLANG="${WASI_SDK:-/opt/wasi-sdk}/bin/clang"
+WASM_DIR="$SCRIPT_DIR/../wasm-apps"
+WASM_CFLAGS="--target=wasm32 -nostdlib -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096 -O2 -fno-builtin"
 
 if [ ! -x "$WASI_CLANG" ]; then
     echo "ERROR: WASI SDK not found at $WASI_CLANG"
-    echo "Install: https://github.com/aspect-build/aspect-workflows/wiki/Install-WASI-SDK"
     echo "Or set WASI_SDK=/path/to/wasi-sdk"
     exit 1
 fi
 
-echo "--- Compiling hello_small.c → hello_small.wasm ---"
-"$WASI_CLANG" --target=wasm32 -nostdlib \
-    -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined \
-    -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096 \
-    -O2 -fno-builtin \
-    -o "$WASM_FILE" "$WASM_SRC"
+for MODULE in sensor actuator alert; do
+    echo "--- Compiling ${MODULE}.c → ${MODULE}.wasm ---"
+    "$WASI_CLANG" $WASM_CFLAGS \
+        -o "$WASM_DIR/${MODULE}.wasm" "$WASM_DIR/${MODULE}.c"
 
-echo "--- Generating wasm_hello.h from hello_small.wasm ---"
-{
-    echo "unsigned char wasm_hello[] = {"
-    xxd -i < "$WASM_FILE"
-    echo "};"
-    echo "unsigned int wasm_hello_len = $(wc -c < "$WASM_FILE" | tr -d ' ');"
-} > "$WASM_HEADER"
+    echo "--- Generating wasm_${MODULE}.h ---"
+    {
+        echo "unsigned char wasm_${MODULE}[] = {"
+        xxd -i < "$WASM_DIR/${MODULE}.wasm"
+        echo "};"
+        echo "unsigned int wasm_${MODULE}_len = $(wc -c < "$WASM_DIR/${MODULE}.wasm" | tr -d ' ');"
+    } > "$SCRIPT_DIR/src/wasm_${MODULE}.h"
+done
 
 echo "=== Building WAMR for ${BOARD} (${WAMR_TARGET}) ==="
 

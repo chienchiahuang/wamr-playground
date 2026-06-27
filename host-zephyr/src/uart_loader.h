@@ -16,7 +16,8 @@
 int uart_loader_init(void);
 
 int uart_loader_poll(uint8_t *buf, uint32_t buf_size,
-                     uint32_t *out_size, int32_t timeout_ms);
+                     uint32_t *out_size, int *out_slot,
+                     int32_t timeout_ms);
 
 void uart_loader_respond(const char *msg);
 

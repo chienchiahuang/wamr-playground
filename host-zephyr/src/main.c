@@ -3,12 +3,18 @@
 #include <zephyr/kernel.h>
 #include "wasm_export.h"
 #include "supervisor.h"
+#include "native_api.h"
 
 static char global_heap_buf[WASM_GLOBAL_HEAP_SIZE];
 
 int main(void)
 {
-    printk("--- WAMR OTA Runtime ---\n");
+    printk("--- WAMR Multi-Module Runtime ---\n");
+
+    if (native_api_init() != 0) {
+        printk("GPIO init failed\n");
+        return 1;
+    }
 
     RuntimeInitArgs init_args;
     memset(&init_args, 0, sizeof(init_args));
@@ -20,6 +26,8 @@ int main(void)
         printk("WAMR init failed\n");
         return 1;
     }
+
+    native_api_register();
 
     supervisor_start();
     return 0;

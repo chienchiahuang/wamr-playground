@@ -2,3 +2,7 @@ build/
 output/
 *.wasm
 .vscode/
+host-zephyr/src/wasm_sensor.h
+host-zephyr/src/wasm_actuator.h
+host-zephyr/src/wasm_alert.h
+host-zephyr/src/wasm_hello.h

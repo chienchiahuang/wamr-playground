@@ -4,14 +4,19 @@
 		#address-cells = <1>;
 		#size-cells = <1>;
 
-		wasm_a_partition: partition@f0000 {
-			label = "wasm_a";
-			reg = <0x000f0000 0x8000>;
+		wasm_0_partition: partition@f4000 {
+			label = "wasm_0";
+			reg = <0x000f4000 0x4000>;
 		};
 
-		wasm_b_partition: partition@f8000 {
-			label = "wasm_b";
-			reg = <0x000f8000 0x8000>;
+		wasm_1_partition: partition@f8000 {
+			label = "wasm_1";
+			reg = <0x000f8000 0x4000>;
+		};
+
+		wasm_2_partition: partition@fc000 {
+			label = "wasm_2";
+			reg = <0x000fc000 0x4000>;
 		};
 	};
 };

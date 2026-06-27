@@ -4,18 +4,10 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+#define MAX_MODULES 3
+
 void wasm_runner_init(void);
 
-bool wasm_runner_load_embedded(void);
-
-bool wasm_runner_load_buffer(uint8_t *buf, uint32_t size);
-
-void wasm_runner_start(void);
-
-void wasm_runner_stop(void);
-
-void wasm_runner_unload(void);
-
-bool wasm_runner_exited(void);
+bool wasm_runner_execute(uint8_t *buf, uint32_t size, const char *name);
 
 #endif

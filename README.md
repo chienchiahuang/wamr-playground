@@ -37,22 +37,91 @@ Run WebAssembly on multiple platforms using
 ## Project Structure
 
 ```
-wasm-micro-runtime/        # WAMR submodule
+wasm-micro-runtime/            # WAMR submodule
+FreeRTOS-Kernel/               # FreeRTOS submodule
 wasm-apps/
-  hello.c                  # WASI hello world (~54KB wasm)
-  hello_small.c            # Minimal hello world (~526B wasm, libc-builtin)
-FreeRTOS-Kernel/           # FreeRTOS submodule
-host-maclinux/             # Desktop host runtime
-host-stm32/                # Bare-metal Cortex-M4 (no OS)
-host-freertos/             # FreeRTOS on STM32L476 (real threading)
-host-zephyr/               # Zephyr RTOS (Docker-based build)
-  Dockerfile               # Zephyr SDK + west workspace
-  build.sh                 # Build & flash script
-  boards/
-    nucleo_l476rg.conf     # STM32 Nucleo board overlay
-    nrf52840dk_nrf52840.conf # nRF52840DK board overlay
+  sensor.c                     # Button reader module
+  actuator.c                   # LED controller module
+  alert.c                      # Alert notification module
+  alert_updated.c              # Alternative alert (OTA demo)
+  hello.c / hello_small.c      # Simple test apps
+tools/
+  wasm_send.py                 # OTA upload tool (serial)
+host-maclinux/                 # Desktop host runtime
+host-stm32/                    # Bare-metal Cortex-M4 (no OS)
+host-freertos/                 # FreeRTOS on STM32L476 (OTA)
+host-zephyr/                   # Zephyr RTOS (multi-module OTA)
   src/
-    main.c                 # Same for all boards
+    main.c                     # WAMR init + native API registration
+    supervisor.c               # Module lifecycle + OTA handler
+    wasm_runner.c              # Load → run → unload per module
+    wasm_flash.c               # Flash persistence (3 slots)
+    uart_loader.c              # UART OTA protocol parser
+    native_api.c               # GPIO buttons/LEDs + shared state
+  boards/
+    nrf52840dk_nrf52840.overlay # Flash partition layout
+```
+
+## Software Architecture (nRF52840DK Multi-Module)
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Host PC                                  │
+│  wasm_send.py -s <slot> module.wasm                        │
+│       │ UART (115200 baud)                                 │
+└───────┼─────────────────────────────────────────────────────┘
+        │
+┌───────▼─────────────────────────────────────────────────────┐
+│  nRF52840DK Firmware                                       │
+│                                                            │
+│  ┌──────────────────────────────────────────────────────┐  │
+│  │  Supervisor Thread (100ms cycle)                     │  │
+│  │                                                      │  │
+│  │  ┌──────────┐   ┌──────────┐   ┌──────────┐        │  │
+│  │  │ sensor   │──▶│ actuator │──▶│  alert   │        │  │
+│  │  │  .wasm   │   │  .wasm   │   │  .wasm   │        │  │
+│  │  └────┬─────┘   └────┬─────┘   └────┬─────┘        │  │
+│  │       │              │              │               │  │
+│  │  load→run→unload  load→run→unload  load→run→unload  │  │
+│  └──────────────────────┼──────────────────────────────┘  │
+│                         │                                  │
+│  ┌──────────────────────▼──────────────────────────────┐  │
+│  │  Native API (C, registered globally)                │  │
+│  │                                                      │  │
+│  │  read_button(n) ──▶ GPIO Input  (4 buttons)         │  │
+│  │  set_led(n, on) ──▶ GPIO Output (4 LEDs)            │  │
+│  │  set_data(k, v) ──▶ Shared State [16 slots]         │  │
+│  │  get_data(k)    ◀── Shared State [16 slots]         │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                                                            │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  UART Loader                                        │  │
+│  │  Protocol: MAGIC + CMD + SLOT + SIZE + payload + CRC│  │
+│  │  ISR → Ring Buffer (1KB) → Protocol Parser          │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                                                            │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  Flash Storage (nRF52840 internal flash)            │  │
+│  │                                                      │  │
+│  │  ┌──────────┐  ┌──────────┐  ┌──────────┐          │  │
+│  │  │ Slot 0   │  │ Slot 1   │  │ Slot 2   │          │  │
+│  │  │ sensor   │  │ actuator │  │ alert    │          │  │
+│  │  │ 16KB     │  │ 16KB     │  │ 16KB     │          │  │
+│  │  │ @0xF4000 │  │ @0xF8000 │  │ @0xFC000 │          │  │
+│  │  └──────────┘  └──────────┘  └──────────┘          │  │
+│  │  Header: magic + size + CRC32 + version             │  │
+│  └─────────────────────────────────────────────────────┘  │
+│                                                            │
+│  ┌─────────────────────────────────────────────────────┐  │
+│  │  WAMR Runtime (79KB heap pool)                      │  │
+│  │  Interpreter mode, one module loaded at a time      │  │
+│  └─────────────────────────────────────────────────────┘  │
+└────────────────────────────────────────────────────────────┘
+
+Data Flow per Cycle:
+  sensor.wasm:   read_button(0..3) → set_data(0..3, state)
+  actuator.wasm: get_data(0..3) → set_led(0..3, state)
+  alert.wasm:    get_data(0..3) → printf("[ALERT] ...")
 ```
 
 ## Step 1: Compile the Wasm App
@@ -192,65 +261,87 @@ Hello World from WebAssembly!
 [runner] elapsed: 1 ms
 ```
 
-## Wasm OTA (Over-The-Air Updates)
+## Multi-Module Wasm Architecture
 
-The Zephyr firmware includes a **supervisor + wasm runner** architecture that allows hot-swapping wasm modules over UART without reflashing the MCU.
+The Zephyr nRF52840DK firmware runs **three independent wasm modules** in a 100ms cycle.
+Each module can be OTA-updated independently over UART.
 
 ### Architecture
 
 ```
-Supervisor thread (always running)
-  ├── Boots default wasm from embedded header
-  ├── Listens on UART for incoming .wasm binaries
-  └── On upload: stop current → load new → restart
-        On failure: fall back to default wasm
+Supervisor (100ms cycle):
+  ┌─ sensor.wasm    → read_button(0..3) → set_data()
+  ├─ actuator.wasm  → get_data() → set_led(0..3)
+  └─ alert.wasm     → get_data() → printf("[ALERT] ...")
 
-Wasm runner thread (managed by supervisor)
-  └── Executes the current wasm module
+Native API (C, shared by all modules):
+  read_button(n)     → GPIO input (4 buttons on DK)
+  set_led(n, on)     → GPIO output (4 LEDs on DK)
+  set_data(key, val) → shared key-value store
+  get_data(key)      → shared key-value store
 ```
 
-### OTA Upload
+Modules communicate through `set_data`/`get_data`. Updating `alert.wasm`
+doesn't affect sensor or actuator logic.
+
+### Flash Slots (3 × 16KB)
+
+Each module is stored in its own flash slot and persists across reboots:
+
+| Slot | Module | Flash address |
+|------|--------|---------------|
+| 0 | sensor.wasm | 0xF4000 |
+| 1 | actuator.wasm | 0xF8000 |
+| 2 | alert.wasm | 0xFC000 |
+
+### OTA Individual Modules
 
 **Prerequisites:** `pyserial` (`pip install pyserial`)
 
-1. Build & flash the firmware:
+1. Build & flash:
    ```bash
-   cd host-zephyr
-   ./build.sh --flash nrf52840dk_nrf52840
+   make zephyr-nrf52840
+   make flash-zephyr-nrf52840
    ```
 
-2. Find your serial port:
+2. Press buttons → LEDs light up, UART shows `[ALERT] Button X pressed!`
+
+3. Update only the alert logic:
    ```bash
-   ls /dev/tty.usbmodem*     # macOS
-   ls /dev/ttyACM*            # Linux
+   python3 tools/wasm_send.py -p /dev/tty.usbmodem* -s 2 wasm-apps/alert_updated.wasm
    ```
 
-3. Write a new wasm app:
-   ```c
-   // wasm-apps/my_app.c
-   extern int printf(const char *fmt, ...);
-   int main(void) {
-       printf("Hello from OTA!\n");
-       return 0;
-   }
-   ```
+4. Now alerts show `[ALERT-v2]` — sensor and actuator unchanged.
 
-4. Compile to wasm:
-   ```bash
-   /opt/wasi-sdk/bin/clang --target=wasm32 -nostdlib \
-       -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined \
-       -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096 \
-       -O2 -fno-builtin \
-       -o wasm-apps/my_app.wasm wasm-apps/my_app.c
-   ```
+5. Power cycle → alert_updated persists in flash slot 2.
 
-5. Send over serial:
-   ```bash
-   python3 tools/wasm_send.py -p /dev/tty.usbmodem* wasm-apps/my_app.wasm
-   ```
+### Writing Custom Modules
 
-6. The device responds `OK` and the new wasm runs immediately — no reboot needed.
-7. **Power cycle** — the OTA wasm persists in flash and runs again on boot.
+Modules import native functions from `"env"`:
+
+```c
+// Available imports:
+extern int read_button(int n);     // n=0..3, returns 0 or 1
+extern void set_led(int n, int on); // n=0..3
+extern void set_data(int key, int value); // key=0..15
+extern int get_data(int key);      // key=0..15
+extern int printf(const char *fmt, ...); // UART output
+
+int main(void) {
+    // your logic here
+    return 0;
+}
+```
+
+Compile and OTA:
+```bash
+/opt/wasi-sdk/bin/clang --target=wasm32 -nostdlib \
+    -Wl,--no-entry -Wl,--export=main -Wl,--allow-undefined \
+    -Wl,--initial-memory=65536 -Wl,-z,stack-size=4096 \
+    -O2 -fno-builtin -o my_module.wasm my_module.c
+
+python3 tools/wasm_send.py -p /dev/tty.usbmodem* -s <slot> my_module.wasm
+```
 
 ### Flash Storage (nRF52840DK)
 
