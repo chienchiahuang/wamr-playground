@@ -250,6 +250,41 @@ Wasm runner thread (managed by supervisor)
    ```
 
 6. The device responds `OK` and the new wasm runs immediately — no reboot needed.
+7. **Power cycle** — the OTA wasm persists in flash and runs again on boot.
+
+### Flash Storage (nRF52840DK)
+
+OTA wasm modules are stored in flash and survive power cycles.
+
+**A/B slot design** — two 32KB partitions at the end of 1MB flash:
+
+```
+nRF52840 Flash (1 MB)
+┌──────────────────────┐ 0x00000
+│  Firmware            │ ~128 KB
+│  (code + embedded    │
+│   default wasm)      │
+├──────────────────────┤ 0xF0000
+│  Slot A (32 KB)      │ Default wasm — written on first boot
+├──────────────────────┤ 0xF8000
+│  Slot B (32 KB)      │ OTA wasm — written on upload
+└──────────────────────┘ 0x100000
+```
+
+Each slot has a 32-byte header (magic, size, CRC-32, version counter)
+followed by the wasm binary.
+
+**Boot flow:**
+1. Check both slots for valid wasm (magic + CRC)
+2. Load the slot with the highest version number
+3. If neither valid → copy embedded default to Slot A (first boot only)
+
+**OTA flow:**
+1. Receive wasm over UART → write to Slot B with version = current + 1
+2. Load from Slot B → run immediately
+3. Persists across reboots — Slot B has the higher version
+
+**Max wasm size per slot:** ~28 KB (32 KB slot minus 4 KB header page)
 
 ### OTA Protocol
 
