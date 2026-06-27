@@ -1,0 +1,17 @@
+&flash0 {
+	partitions {
+		compatible = "fixed-partitions";
+		#address-cells = <1>;
+		#size-cells = <1>;
+
+		wasm_a_partition: partition@f0000 {
+			label = "wasm_a";
+			reg = <0x000f0000 0x8000>;
+		};
+
+		wasm_b_partition: partition@f8000 {
+			label = "wasm_b";
+			reg = <0x000f8000 0x8000>;
+		};
+	};
+};

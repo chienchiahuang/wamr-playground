@@ -50,6 +50,7 @@ target_sources(app PRIVATE
     src/supervisor.c
     src/wasm_runner.c
     src/uart_loader.c
+    src/wasm_flash.c
 )
 
 target_compile_definitions(app PRIVATE
