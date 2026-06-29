@@ -58,13 +58,13 @@ zephyr-nucleo:
 	cd host-zephyr && ./build.sh nucleo_l476rg
 
 zephyr-nrf52840:
-	cd host-zephyr && ./build.sh nrf52840dk_nrf52840
+	cd host-zephyr && ./build.sh nrf52840dk
 
 flash-zephyr-nucleo:
 	cd host-zephyr && ./build.sh flash nucleo_l476rg
 
 flash-zephyr-nrf52840:
-	cd host-zephyr && ./build.sh flash nrf52840dk_nrf52840
+	cd host-zephyr && ./build.sh flash nrf52840dk
 
 clean-zephyr:
 	cd host-zephyr && ./build.sh clean

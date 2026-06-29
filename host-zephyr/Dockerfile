@@ -1,7 +1,7 @@
-FROM ghcr.io/zephyrproject-rtos/ci-base:v0.26-branch
+FROM ghcr.io/zephyrproject-rtos/ci-base:main
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG ZEPHYR_SDK_VERSION=0.16.9
+ARG ZEPHYR_SDK_VERSION=0.17.0
 
 # Install Zephyr SDK (minimal — toolchains added per-board below)
 WORKDIR /root/zephyrproject/zephyr-sdk

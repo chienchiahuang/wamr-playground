@@ -10,8 +10,8 @@ Run WebAssembly on multiple platforms using
 | macOS / Linux | `host-maclinux/` | POSIX | working |
 | STM32L476RG bare-metal | `host-stm32/` | None | working |
 | STM32L476RG FreeRTOS | `host-freertos/` | FreeRTOS | working |
-| STM32L476RG Zephyr | `host-zephyr/` | Zephyr 3.7.0 | working |
-| nRF52840DK Zephyr | `host-zephyr/` | Zephyr 3.7.0 | working |
+| STM32L476RG Zephyr | `host-zephyr/` | Zephyr 4.1.0 | working |
+| nRF52840DK Zephyr | `host-zephyr/` | Zephyr 4.1.0 | working |
 
 ## Prerequisites
 
@@ -59,7 +59,7 @@ host-zephyr/                   # Zephyr RTOS (multi-module OTA)
     uart_loader.c              # UART OTA protocol parser
     native_api.c               # GPIO buttons/LEDs + shared state
   boards/
-    nrf52840dk_nrf52840.overlay # Flash partition layout
+    nrf52840dk.overlay # Flash partition layout
 ```
 
 ## Software Architecture (nRF52840DK Multi-Module)
@@ -245,7 +245,7 @@ make flash-zephyr-nrf52840     # flash via JLinkExe
 If you change `west_lite.yml` or `Dockerfile`, force an image rebuild:
 
 ```bash
-./build.sh --rebuild nrf52840dk_nrf52840
+./build.sh --rebuild nrf52840dk
 ```
 
 ### Serial Output
@@ -253,7 +253,7 @@ If you change `west_lite.yml` or `Dockerfile`, force an image rebuild:
 Connect at **115200 baud** to see:
 
 ```
-*** Booting Zephyr OS build v3.7.0 ***
+*** Booting Zephyr OS build v4.1.0 ***
 --- WAMR Multi-Module Runtime ---
 [native] GPIO ready: 4 buttons, 4 LEDs
 [flash] 3 slots ready (16384 bytes each)

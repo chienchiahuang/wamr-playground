@@ -28,13 +28,15 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 case "$BOARD" in
     nucleo_l476rg)
         WAMR_TARGET="THUMBV7"
+        WEST_BOARD="nucleo_l476rg"
         ;;
-    nrf52840dk_nrf52840)
+    nrf52840dk)
         WAMR_TARGET="THUMBV7"
+        WEST_BOARD="nrf52840dk/nrf52840"
         ;;
     *)
         echo "Unknown board: $BOARD"
-        echo "Supported boards: nucleo_l476rg, nrf52840dk_nrf52840"
+        echo "Supported boards: nucleo_l476rg, nrf52840dk"
         exit 1
         ;;
 esac
@@ -59,7 +61,7 @@ flash_board() {
                 exit 1
             fi
             ;;
-        nrf52840dk_nrf52840)
+        nrf52840dk)
             if command -v JLinkExe >/dev/null 2>&1; then
                 echo "=== Flashing ${BOARD} via JLinkExe ==="
                 JLinkExe -device nRF52840_xxAA -if SWD -speed 4000 -autoconnect 1 <<JLINK
@@ -144,7 +146,7 @@ docker run --rm \
     "$IMAGE_NAME" \
     bash -c "
         cd /root/zephyrproject && \
-        west build -p always -b ${BOARD} application -- \
+        west build -p always -b ${WEST_BOARD} application -- \
             -DWAMR_BUILD_TARGET=${WAMR_TARGET} && \
         cp build/zephyr/zephyr.elf /output/${BOARD}.elf && \
         cp build/zephyr/zephyr.bin /output/${BOARD}.bin && \
