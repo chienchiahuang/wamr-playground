@@ -27,12 +27,12 @@ struct embedded_default {
 static struct embedded_default defaults[WASM_NUM_SLOTS];
 
 static bool
-run_slot(int slot)
+load_slot(int slot)
 {
     uint32_t size = wasm_flash_read(slot, wasm_buf, sizeof(wasm_buf));
     if (size == 0)
         return false;
-    return wasm_runner_execute(wasm_buf, size, slot_names[slot]);
+    return wasm_runner_load(slot, slot_names[slot], wasm_buf, size);
 }
 
 static void
@@ -56,23 +56,24 @@ supervisor_entry(void *p1, void *p2, void *p3)
         return;
     }
 
-    /* Write defaults to flash on first boot */
+    /* Load all modules from flash (write defaults on first boot) */
     for (int i = 0; i < WASM_NUM_SLOTS; i++) {
         if (!wasm_flash_valid(i)) {
             printk("[supervisor] writing default %s to slot %d\n",
                    slot_names[i], i);
             wasm_flash_write(i, defaults[i].data, *defaults[i].len);
         }
+        if (!load_slot(i)) {
+            printk("[supervisor] slot %d (%s) failed to load!\n",
+                   i, slot_names[i]);
+        }
     }
 
-    printk("[supervisor] running (sensor → actuator → alert, 100ms cycle)\n");
+    printk("[supervisor] all modules loaded, running...\n");
 
     while (1) {
-        /* Run all 3 modules sequentially (load → run → unload each) */
-        for (int i = 0; i < WASM_NUM_SLOTS; i++) {
-            if (wasm_flash_valid(i))
-                run_slot(i);
-        }
+        /* Run all loaded modules (no load/unload per cycle) */
+        wasm_runner_run_all();
 
         /* Check for OTA upload */
         uint32_t wasm_size = 0;
@@ -90,11 +91,22 @@ supervisor_entry(void *p1, void *p2, void *p3)
             printk("[supervisor] OTA slot %d (%s): %u bytes\n",
                    target_slot, slot_names[target_slot], wasm_size);
 
-            if (wasm_flash_write(target_slot, wasm_buf, wasm_size) == 0) {
+            if (wasm_flash_write(target_slot, wasm_buf, wasm_size) != 0) {
+                uart_loader_respond("ERR:FLASH\n");
+                break;
+            }
+
+            /* Unload old, reload from flash */
+            wasm_runner_unload(target_slot);
+            if (load_slot(target_slot)) {
                 uart_loader_respond("OK\n");
                 printk("[supervisor] %s updated\n", slot_names[target_slot]);
             } else {
-                uart_loader_respond("ERR:FLASH\n");
+                uart_loader_respond("ERR:LOAD\n");
+                printk("[supervisor] reload failed, restoring default\n");
+                wasm_flash_write(target_slot, defaults[target_slot].data,
+                                 *defaults[target_slot].len);
+                load_slot(target_slot);
             }
             break;
 
