@@ -254,17 +254,23 @@ Connect at **115200 baud** to see:
 
 ```
 *** Booting Zephyr OS build v3.7.0 ***
---- WAMR OTA Runtime ---
-[supervisor] loading default wasm
-[supervisor] wasm running, waiting for OTA uploads...
-Hello World from WebAssembly!
-[runner] elapsed: 1 ms
+--- WAMR Multi-Module Runtime ---
+[native] GPIO ready: 4 buttons, 4 LEDs
+[flash] 3 slots ready (16384 bytes each)
+[loader] UART RX ready
+[runner] sensor loaded and ready
+[runner] actuator loaded and ready
+[runner] alert loaded and ready
+[supervisor] all modules loaded, running...
 ```
+
+Press buttons → LEDs light up, UART shows `[ALERT] Button X pressed!`
 
 ## Multi-Module Wasm Architecture
 
 The Zephyr nRF52840DK firmware runs **three independent wasm modules** in a 100ms cycle.
 Each module can be OTA-updated independently over UART.
+All modules are **loaded once at boot and kept in RAM** — no per-cycle flash overhead.
 
 ### Architecture
 
@@ -274,15 +280,27 @@ Supervisor (100ms cycle):
   ├─ actuator.wasm  → get_data() → set_led(0..3)
   └─ alert.wasm     → get_data() → printf("[ALERT] ...")
 
-Native API (C, shared by all modules):
+Native API (C, registered globally via wasm_runtime_register_natives):
   read_button(n)     → GPIO input (4 buttons on DK)
   set_led(n, on)     → GPIO output (4 LEDs on DK)
-  set_data(key, val) → shared key-value store
-  get_data(key)      → shared key-value store
+  set_data(key, val) → shared key-value store (int32[16])
+  get_data(key)      → shared key-value store (int32[16])
 ```
 
-Modules communicate through `set_data`/`get_data`. Updating `alert.wasm`
+Modules communicate through `set_data`/`get_data` — a C-side shared array
+that persists between module executions. Updating `alert.wasm`
 doesn't affect sensor or actuator logic.
+
+### Execution Model
+
+All 3 modules are loaded from flash at boot and stay instantiated in RAM.
+Each cycle calls `execute_main()` on each — no load/unload overhead.
+Only reloads a module when it receives an OTA update.
+
+| Approach | Per-module overhead | WAMR pool | Version |
+|----------|-------------------|-----------|---------|
+| Load from flash per cycle | ~1.4 ms | 79 KB | v0.3.0 |
+| **Keep loaded in RAM** | **~0.1 ms** | **220 KB** | **v0.3.1** |
 
 ### Flash Slots (3 × 16KB)
 
@@ -343,69 +361,35 @@ Compile and OTA:
 python3 tools/wasm_send.py -p /dev/tty.usbmodem* -s <slot> my_module.wasm
 ```
 
-### Flash Storage (nRF52840DK)
-
-OTA wasm modules are stored in flash and survive power cycles.
-
-**A/B slot design** — two 32KB partitions at the end of 1MB flash:
-
-```
-nRF52840 Flash (1 MB)
-┌──────────────────────┐ 0x00000
-│  Firmware            │ ~128 KB
-│  (code + embedded    │
-│   default wasm)      │
-├──────────────────────┤ 0xF0000
-│  Slot A (32 KB)      │ Default wasm — written on first boot
-├──────────────────────┤ 0xF8000
-│  Slot B (32 KB)      │ OTA wasm — written on upload
-└──────────────────────┘ 0x100000
-```
-
-Each slot has a 32-byte header (magic, size, CRC-32, version counter)
-followed by the wasm binary.
-
-**Boot flow:**
-1. Check both slots for valid wasm (magic + CRC)
-2. Load the slot with the highest version number
-3. If neither valid → copy embedded default to Slot A (first boot only)
-
-**OTA flow:**
-1. Receive wasm over UART → write to Slot B with version = current + 1
-2. Load from Slot B → run immediately
-3. Persists across reboots — Slot B has the higher version
-
-**Max wasm size per slot:** ~28 KB (32 KB slot minus 4 KB header page)
-
 ### OTA Protocol
 
 Binary protocol over UART (shared with console, 115200 baud):
 
 ```
-MAGIC(4B "WASM") + CMD(1B) + SIZE(4B LE) + '\n' + PAYLOAD(SIZE B) + CRC32(4B LE)
+MAGIC(4B "WASM") + CMD(1B) + SLOT(1B) + SIZE(4B LE) + '\n' + PAYLOAD + CRC32(4B LE)
 ```
 
 | CMD | Description |
 |-----|-------------|
-| `0x01` | Upload wasm binary |
+| `0x01` | Upload wasm to target slot |
 | `0x02` | Query status |
 
 | Response | Meaning |
 |----------|---------|
-| `OK` | Upload received, wasm swapped successfully |
+| `OK` | Upload received, module updated |
 | `ERR:CRC` | CRC-32 mismatch, upload rejected |
 | `ERR:SIZE` | Payload too large for buffer (max 8KB) |
+| `ERR:SLOT` | Invalid slot number |
+| `ERR:FLASH` | Flash write failed |
 | `ERR:LOAD` | wasm_runtime_load failed, fell back to default |
 
-### Max Wasm Binary Size
+### OTA Flow
 
-| Board | Max size | OTA status |
-|-------|----------|------------|
-| nRF52840DK | 8 KB | Working (ISR-based UART RX) |
-| nucleo_l476rg | 2 KB | Builds, OTA requires ST-Link V2 firmware ≥ V2J46 |
-
-> **STM32 note:** The ST-Link V2 VCP needs a firmware update for host→device serial RX.
-> Update via **STM32CubeProgrammer → Firmware Update → Upgrade**.
+1. Host sends wasm binary with target slot number
+2. Device validates CRC-32, writes to flash slot
+3. Unloads old module from RAM, reloads from flash
+4. New module runs on next cycle — no reboot needed
+5. Power cycle → module persists in flash
 
 ### Adding a New Board
 
@@ -431,18 +415,30 @@ MAGIC(4B "WASM") + CMD(1B) + SIZE(4B LE) + '\n' + PAYLOAD(SIZE B) + CRC32(4B LE)
 | Flash | 92 KB (8.8%) | 1024 KB |
 | RAM | 97.6 KB (99.3%) | 96 KB |
 
-### nRF52840DK Zephyr (with OTA supervisor)
+### nRF52840DK Zephyr (multi-module, v0.3.1)
 
-| Resource | Used | Available |
-|----------|------|-----------|
-| Flash | 99 KB (9.4%) | 1024 KB |
-| RAM | 108 KB (41.2%) | 256 KB |
+| Resource | Used | Available | Details |
+|----------|------|-----------|---------|
+| Flash | 117 KB (11.2%) | 1024 KB | Firmware + 3 × 16KB wasm slots |
+| RAM | 252 KB (96.1%) | 256 KB | 220KB WAMR pool (3 modules × 64KB linear mem) |
 
-### Key WAMR Settings for Small Footprint
+### RAM Breakdown (nRF52840DK)
+
+| Component | Size | Notes |
+|-----------|------|-------|
+| WAMR heap pool | 220 KB | Holds 3 modules simultaneously |
+| Wasm OTA buffer | 8 KB | Receives incoming wasm |
+| UART ring buffer | 1 KB | ISR → supervisor |
+| Thread stacks | 6 KB | Supervisor + main + interrupt |
+| Zephyr kernel | ~4 KB | Kernel objects, device state |
+| Log buffer | 4 KB | Zephyr log system |
+| Embedded wasm defaults | ~2 KB | Factory fallback |
+| Shared state + misc | ~7 KB | GPIO, native symbols |
+
+### Key WAMR Settings
 
 - `WAMR_BUILD_INTERP=1` — interpreter only (no AOT/JIT)
 - `WAMR_BUILD_FAST_INTERP=1` — faster interpreter variant
-- `WAMR_BUILD_MINI_LOADER=1` — smaller wasm loader
 - `WAMR_BUILD_LIBC_BUILTIN=1` — lightweight libc (printf, memcpy, etc.)
 - `WAMR_BUILD_LIBC_WASI=0` — disable WASI (not available on bare metal)
 - All optional features disabled (SIMD, ref types, threads, etc.)
